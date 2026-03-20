@@ -48,12 +48,26 @@ const App: React.FC = () => {
   // 설정 모달 표시 여부
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   
+  // 전체화면 + 화면 켜짐 상태(사용자 동작으로만 활성화)
+  const [immersiveActive, setImmersiveActive] = useState(false);
+
   // 현재 디바이스 타입에 맞는 레이아웃 설정
   const currentLayout = layoutSettings[getDeviceType()];
   
+  // Wake Lock Sentinel 보관용 ref
+  const wakeLockRef = useRef<any>(null);
+  // 상태값을 이벤트 핸들러 closure에서 안정적으로 참조하기 위한 ref
+  const immersiveActiveRef = useRef(false);
+
   // 로딩 중복 호출 방지를 위한 ref
   const loadingRef = useRef(false);
   
+  // 상태 변경 시 ref도 함께 동기화
+  const setImmersiveActiveSafe = (next: boolean) => {
+    immersiveActiveRef.current = next;
+    setImmersiveActive(next);
+  };
+
   // ============================================================
   // 실시간 시계 업데이트 (1초마다)
   // ============================================================
@@ -170,6 +184,87 @@ const App: React.FC = () => {
   }, [fetchWeather]);
   
   // ============================================================
+  // Fullscreen API + Screen Wake Lock API (사용자 제스처 기반)
+  // ============================================================
+
+  const releaseWakeLock = async () => {
+    try {
+      if (wakeLockRef.current) {
+        await wakeLockRef.current.release();
+      }
+    } catch (err) {
+      // 일부 브라우저에서 release 호출 실패가 날 수 있어 무시
+      console.debug('Wake Lock release error:', err);
+    } finally {
+      wakeLockRef.current = null;
+    }
+  };
+
+  const requestWakeLock = async () => {
+    if (!('wakeLock' in navigator)) return null;
+    if (wakeLockRef.current) return wakeLockRef.current;
+
+    try {
+      const sentinel = await (navigator as any).wakeLock.request('screen');
+      wakeLockRef.current = sentinel;
+      sentinel.addEventListener('release', () => {
+        wakeLockRef.current = null;
+      });
+      return sentinel;
+    } catch (err) {
+      console.error('Wake Lock request error:', err);
+      return null;
+    }
+  };
+
+  const requestFullscreen = async () => {
+    if (document.fullscreenElement) return;
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch (err) {
+      console.error('Fullscreen request error:', err);
+    }
+  };
+
+  const handleStartImmersive = async () => {
+    // 사용자 클릭 제스처에서 호출되어야 함(브라우저 정책)
+    await Promise.all([requestFullscreen(), requestWakeLock()]);
+    setImmersiveActiveSafe(true);
+  };
+
+  useEffect(() => {
+    const onFullscreenChange = async () => {
+      if (document.fullscreenElement === null) {
+        // 전체화면 종료 시 Wake Lock도 해제하고 오버레이를 다시 표시
+        setImmersiveActiveSafe(false);
+        await releaseWakeLock();
+      }
+    };
+
+    const onVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!immersiveActiveRef.current) return;
+      // 전체화면이 아닐 때는 재요청하지 않음(정책/UX 이슈 방지)
+      if (document.fullscreenElement === null) return;
+      if (wakeLockRef.current) return;
+
+      await requestWakeLock();
+    };
+
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      // StrictMode 더블 마운트에서도 안전하게 cleanup
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      releaseWakeLock();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ============================================================
   // 레이아웃 설정 변경 핸들러
   // ============================================================
   const handleLayoutSettingsChange = (newSettings: DeviceLayoutSettings) => {
@@ -217,6 +312,30 @@ const App: React.FC = () => {
         className="absolute bottom-1 md:bottom-2 left-1/2 -translate-x-1/2 w-24 md:w-32 h-1 bg-white/10 rounded-full pointer-events-none burn-in-prevention-buttons"
         style={{ willChange: 'transform' }}
       />
+
+      {/* 사용자 시작(전체화면 + Wake Lock) 오버레이 */}
+      {!immersiveActive && !showSettingsModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70">
+          <div className="w-full px-4">
+            <div className="mx-auto max-w-md bg-[#0d0d0d] border border-white/10 rounded-[2rem] p-5 md:p-6">
+              <div className="text-center">
+                <div className="text-base font-semibold text-white mb-4">
+                  전체화면 및 화면 켜기
+                </div>
+                <div className="text-xs text-gray-400 mb-5 leading-relaxed">
+                  버튼을 눌러 Fullscreen과 Screen Wake Lock을 활성화해 주세요.
+                </div>
+                <button
+                  onClick={handleStartImmersive}
+                  className="w-full py-3 rounded-full bg-white/10 border border-white/15 text-white hover:bg-white/15 active:scale-[0.99] transition-all"
+                >
+                  시작
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* 설정 모달 */}
       <SettingsModal

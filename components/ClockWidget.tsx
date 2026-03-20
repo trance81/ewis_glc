@@ -119,14 +119,14 @@ export const ClockWidget: React.FC<ClockWidgetProps> = ({
           
           {/* 초 (Seconds) - 세로 진행률 표시 */}
           <div
-            className="ml-2 sm:ml-4 self-center"
+            className="ml-2 sm:ml-4 self-baseline"
             role="progressbar"
             aria-label={`초 진행률 ${seconds} / 59`}
             aria-valuemin={0}
             aria-valuemax={59}
             aria-valuenow={seconds}
           >
-            <div className="relative w-[7px]" style={{ height: '0.95em' }}>
+            <div className="relative w-[15px]" style={{ height: '0.7em' }}>
               {/* 시작/끝 위치를 보여주는 얇은 라인 (막대 폭보다 넓게) */}
               <div
                 className="absolute top-0 left-0 w-full h-[1px] bg-white/20 z-[2]"
@@ -138,7 +138,7 @@ export const ClockWidget: React.FC<ClockWidgetProps> = ({
               />
 
               {/* 실제 트랙/채움은 가운데 3px */}
-              <div className="absolute left-1/2 -translate-x-1/2 w-[3px] bg-white/5 rounded-full overflow-hidden h-full relative">
+              <div className="absolute left-1/2 -translate-x-1/2 w-[11px] bg-white/5 rounded-full overflow-hidden h-full relative">
                 <div
                   className="absolute bottom-0 left-0 w-full bg-blue-400/70 rounded-full transition-all duration-300"
                   style={{ height: `${secondsProgress * 100}%` }}
